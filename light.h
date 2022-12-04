@@ -22,16 +22,19 @@ namespace light
   void setDimmingParameters(const char* dimmingTypeStr, const char* debounceStr);
 
   void setBrightness(uint8_t b);
-  void lightOn();
-  void lightOff();
-  ICACHE_RAM_ATTR void lightToggle();
+  ICACHE_RAM_ATTR void lightOn(bool noLightAutoTurnOff=false);
+  ICACHE_RAM_ATTR void lightOff();
+  ICACHE_RAM_ATTR void lightToggle(bool noLightAutoTurnOff=false);
   ICACHE_RAM_ATTR bool lightIsOn();
 
   void STM32reset();
 
   void sendCmdGetVersion();
   void sendCmdGetState();
-  void setBlinkingDuration(uint16_t duration);    // in ms, duration==0 means no blinking
+  void setBlinkingDuration(const char* durationStr);
+  void setBlinkingPattern(const char *payload);
+  void startBlinking();
+  void stopBlinking();
   void setup();
   void handle();
   void updateParams();

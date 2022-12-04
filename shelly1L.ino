@@ -1,7 +1,8 @@
 
 /*
-  Firmware for Shelly 1L: https://shelly.cloud/knowledge-base/devices/shelly-1L/
+  Firmware for Shelly 1L: https://kb.shelly.cloud/knowledge-base/shelly-1l
 */
+
 
 
 #include "wifi.h"
@@ -10,19 +11,21 @@
 #include "light.h"
 #include "switches.h"
 
+#include "LittleFS.h"
+
 
 void setup()
-{
+{ 
   // Setup serial
   Serial.begin(115200);
 
-  // Mount the SPIFFS
-  if (!SPIFFS.begin())
+  // Mount the LittleFS
+  if (!LittleFS.begin())
     logging::getLogStream().println("Failed to mounted file system");
 
   // Setup for the switches and the light
   switches::setup();
-  // Initialise the STM32 MCU
+  // Initialise the relay
   light::setup();
   // Fast blinking to show that the device is booting
   switches::enableBuiltinLedBlinking(switches::LED_FAST_BLINKING);
@@ -37,16 +40,16 @@ void setup()
 
 // the loop function runs over and over again forever
 void loop()
-{
+{   
   wifi::handle();
-  
+
   // Process the telnet commands
   // Interactive console for debugging
   logging::handle();
-  
+
   // Process data for MQTT
   mqtt::handle();
-  
+
   // Process serial data from the MCU
   light::handle();
 

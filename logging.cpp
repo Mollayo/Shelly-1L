@@ -1,6 +1,8 @@
 #include "logging.h"
 
 #include <ESP8266WiFi.h>
+#include <LittleFS.h>
+
 #include "config.h"
 #include "wifi.h"
 #include "light.h"
@@ -51,7 +53,7 @@ size_t LogStream::write(uint8_t data)
     case LogToTelnet:
       return Telnet.write(data);
     case LogToFile:
-      logFile = SPIFFS.open("/log.txt", "a");
+      logFile = LittleFS.open("/log.txt", "a");
       if (logFile)
       {
         tmp = logFile.write(data);
@@ -94,8 +96,10 @@ void LogStream::flush()
   {
     case LogToSerial:
       Serial.flush();
+      break;
     case LogToTelnet:
       Telnet.flush();
+      break;
   }
 }
 
@@ -129,13 +133,14 @@ char* readTelnetCmd()
     }
   }
 
-  const uint8_t MAXBUFFERSIZE = 30;
+  const uint8_t MAXBUFFERSIZE = 40;
   if (Telnet && Telnet.connected() && Telnet.available())
   {
     char c;
     uint8_t charsReceived = 0;
     if (telnetCmd == NULL)
       telnetCmd = (char*)calloc(sizeof(char), MAXBUFFERSIZE);
+    memset(telnetCmd,0x00,sizeof(char)*MAXBUFFERSIZE);
 
     // copy waiting characters into textBuff
     //until textBuff full, CR received, or no more characters
@@ -164,13 +169,13 @@ void printTelnetMenu()
   if (Telnet)
   {
     Telnet.println("Commands:");
-    Telnet.println(" res : reset the STM32 MCU");
-    Telnet.println(" s : get the state of the STM32 MCU");
-    Telnet.println(" v : get the version of the STM32 MCU");    
     Telnet.println(" br000 to br100 : set the brightness between 0% and 100%");
     Telnet.println(" on or off : switch on/off the light");
-    Telnet.println(" temp : enable/disable temperature logging");
-    Telnet.println(" bl0000 to bl9999 : set blinking duration");
+    Telnet.println(" temp : enable/disable temperature logging and overheating alarm");
+    Telnet.println(" blpt xxx xxx xxx : set blinking pattern");
+    Telnet.println(" sab : start blinking");
+    Telnet.println(" sob : stop blinking");
+    Telnet.println(" bldu : set the blinking duration");
   }
 }
 
@@ -180,9 +185,7 @@ void handle()
   if (telnetCmd != NULL)
   {
     // 's' to send the "get state" command
-    if (telnetCmd[0] == 's' && telnetCmd[1] == 0x0D)
-      light::sendCmdGetState();
-    else if (telnetCmd[0] == 'b' && telnetCmd[1] == 'r' && telnetCmd[5] == 0x0D)
+    if (telnetCmd[0] == 'b' && telnetCmd[1] == 'r' && telnetCmd[5] == 0x0D)
     {
       // '0' to '9' to set the brightness from 0% to 90%
       uint16_t v = (telnetCmd[2] - '0') * 100 + (telnetCmd[3] - '0') * 10 + (telnetCmd[4] - '0');
@@ -191,8 +194,6 @@ void handle()
       else
         logging::getLogStream().printf("wrong value for the brightness: %d\n", v);
     }
-    else if (telnetCmd[0] == 'v' && telnetCmd[1] == 0x0D)
-      light::sendCmdGetVersion();
     else if (telnetCmd[0] == 'o' && telnetCmd[1] == 'n' && telnetCmd[2] == 0x0D)
       light::lightOn();
     else if (telnetCmd[0] == 'o' && telnetCmd[1] == 'f' && telnetCmd[2] == 'f' && telnetCmd[3] == 0x0D)
@@ -201,16 +202,16 @@ void handle()
       switches::getTemperatureLogging()=!switches::getTemperatureLogging();
     else if (telnetCmd[0] == 'r' && telnetCmd[1] == 'e' && telnetCmd[2] == 's' && telnetCmd[3] == 0x0D)
       light::STM32reset();
-    else if (telnetCmd[0] == 'b' && telnetCmd[1] == 'l' && telnetCmd[6] == 0x0D)
-    {
-      uint16_t v = (telnetCmd[2] - '0') * 1000 + (telnetCmd[3] - '0') * 100 + (telnetCmd[4] - '0') * 10 + (telnetCmd[5] - '0');
-      if (v >= 0 && v <= 1000)
-        light::setBlinkingDuration(v);
-      else
-        logging::getLogStream().printf("wrong value for the blink duration: %d\n", v);
-    }
+    else if (telnetCmd[0] == 's' && telnetCmd[1] == 'a' && telnetCmd[2] == 'b' && telnetCmd[3] == 0x0D)
+      light::startBlinking();
+    else if (telnetCmd[0] == 's' && telnetCmd[1] == 'o' && telnetCmd[2] == 'b' && telnetCmd[3] == 0x0D)
+      light::stopBlinking();
+    else if (telnetCmd[0] == 'b' && telnetCmd[1] == 'l' && telnetCmd[2] == 'p' && telnetCmd[3] == 't' && telnetCmd[4] == ' ')
+      light::setBlinkingPattern(telnetCmd+5);
+    else if (telnetCmd[0] == 'b' && telnetCmd[1] == 'l' && telnetCmd[2] == 'd' && telnetCmd[3] == 'u' && telnetCmd[4] == ' ')
+      light::setBlinkingDuration(telnetCmd+5);
     else
-      // Command not recognized, we print the menu options
+      // Command not recognized command, we print the menu options
       printTelnetMenu();
   }
 }
@@ -248,10 +249,10 @@ void disableTelnet()
 
 void eraseLogFile()
 {
-  if (SPIFFS.exists("/log.txt"))
+  if (LittleFS.exists("/log.txt"))
   {
     // Erase the content of the file
-    File logFile = SPIFFS.open("/log.txt", "w");
+    File logFile = LittleFS.open("/log.txt", "w");
     if (logFile)
       logFile.close();
   }
